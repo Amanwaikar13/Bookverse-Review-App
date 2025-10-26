@@ -1,0 +1,27 @@
+{
+  "users": [],
+  "books": [
+    {
+      "isbn": "9780140449136",
+      "title": "The Odyssey",
+      "author": "Homer",
+      "reviews": [
+        {
+          "id": "r1",
+          "user": "guest",
+          "rating": 5,
+          "comment": "Epic and timeless.",
+          "history": [],
+          "createdAt": "2025-01-01T00:00:00.000Z",
+          "updatedAt": "2025-01-01T00:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "isbn": "9780140449181",
+      "title": "The Iliad",
+      "author": "Homer",
+      "reviews": []
+    }
+  ]
+}
