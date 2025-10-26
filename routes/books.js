@@ -1,113 +1,81 @@
-const express = require('express');
-const router = express.Router();
-const Joi = require('joi');
-const shortid = require('shortid');
-const { db } = require('../db');
-const { requireUser } = require('../middleware/auth');
+// routes/books.js
+import express from 'express'
+import jwt from 'jsonwebtoken'
+import db from '../db.js'
 
-const reviewSchema = Joi.object({
-  rating: Joi.number().min(1).max(5).required(),
-  comment: Joi.string().max(1000).allow('').optional()
-});
+const router = express.Router()
+const SECRET = 'bookverse_secret'
 
-// Public: get all books
-router.get('/', async (req, res) => {
-  await db.read();
-  res.json(db.data.books);
-});
+// Middleware to verify JWT
+function authenticate(req, res, next) {
+  const authHeader = req.headers.authorization
+  if (!authHeader) return res.status(401).json({ message: 'Missing token' })
+  const token = authHeader.split(' ')[1]
 
-// Public: get by ISBN
-router.get('/:isbn', async (req, res) => {
-  await db.read();
-  const book = db.data.books.find(b => b.isbn === req.params.isbn);
-  if (!book) return res.status(404).json({ error: 'Book not found' });
-  res.json(book);
-});
-
-// Public: search by author or title (query params)
-router.get('/search/by', async (req, res) => {
-  await db.read();
-  const { author, title } = req.query;
-  let results = db.data.books;
-  if (author) {
-    results = results.filter(b => b.author.toLowerCase().includes(author.toLowerCase()));
+  try {
+    const decoded = jwt.verify(token, SECRET)
+    req.user = decoded
+    next()
+  } catch {
+    res.status(403).json({ message: 'Invalid token' })
   }
-  if (title) {
-    results = results.filter(b => b.title.toLowerCase().includes(title.toLowerCase()));
+}
+
+// Get all books
+router.get('/', (req, res) => {
+  res.json(db.data.books)
+})
+
+// Get book by author
+router.get('/author/:author', (req, res) => {
+  const { author } = req.params
+  const result = db.data.books.filter(
+    b => b.author.toLowerCase() === author.toLowerCase()
+  )
+  res.json(result)
+})
+
+// Get book by title
+router.get('/title/:title', (req, res) => {
+  const { title } = req.params
+  const result = db.data.books.filter(
+    b => b.title.toLowerCase().includes(title.toLowerCase())
+  )
+  res.json(result)
+})
+
+// Get book by ISBN and review
+router.get('/:isbn', (req, res) => {
+  const book = db.data.books.find(b => b.isbn === req.params.isbn)
+  if (!book) return res.status(404).json({ message: 'Book not found' })
+  res.json(book)
+})
+
+// Add or modify review (authenticated)
+router.put('/:isbn/review', authenticate, async (req, res) => {
+  const { isbn } = req.params
+  const { review } = req.body
+  const book = db.data.books.find(b => b.isbn === isbn)
+  if (!book) return res.status(404).json({ message: 'Book not found' })
+
+  book.reviews[req.user.username] = review
+  await db.write()
+  res.json({ message: 'Review added/updated', book })
+})
+
+// Delete review by user
+router.delete('/:isbn/review', authenticate, async (req, res) => {
+  const { isbn } = req.params
+  const book = db.data.books.find(b => b.isbn === isbn)
+  if (!book) return res.status(404).json({ message: 'Book not found' })
+
+  if (book.reviews[req.user.username]) {
+    delete book.reviews[req.user.username]
+    await db.write()
+    res.json({ message: 'Review deleted' })
+  } else {
+    res.status(403).json({ message: 'No review found for this user' })
   }
-  res.json(results);
-});
+})
 
-// Protected: add a review (registered user)
-router.post('/:isbn/review', requireUser, async (req, res) => {
-  await db.read();
-  const { error, value } = reviewSchema.validate(req.body);
-  if (error) return res.status(400).json({ error: error.message });
-
-  const book = db.data.books.find(b => b.isbn === req.params.isbn);
-  if (!book) return res.status(404).json({ error: 'Book not found' });
-
-  const review = {
-    id: shortid.generate(),
-    user: req.user.username || req.user.email,
-    rating: value.rating,
-    comment: value.comment || '',
-    history: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-
-  book.reviews.push(review);
-  await db.write();
-  res.status(201).json({ message: 'Review added', review });
-});
-
-// Protected: update review (only author)
-router.put('/:isbn/review/:reviewId', requireUser, async (req, res) => {
-  await db.read();
-  const { error, value } = reviewSchema.validate(req.body);
-  if (error) return res.status(400).json({ error: error.message });
-
-  const book = db.data.books.find(b => b.isbn === req.params.isbn);
-  if (!book) return res.status(404).json({ error: 'Book not found' });
-
-  const review = book.reviews.find(r => r.id === req.params.reviewId);
-  if (!review) return res.status(404).json({ error: 'Review not found' });
-
-  const username = req.user.username || req.user.email;
-  if (review.user !== username) return res.status(403).json({ error: 'Only review owner can edit' });
-
-  // push previous state to history
-  review.history.push({
-    rating: review.rating,
-    comment: review.comment,
-    editedAt: review.updatedAt
-  });
-
-  review.rating = value.rating;
-  review.comment = value.comment || '';
-  review.updatedAt = new Date().toISOString();
-
-  await db.write();
-  res.json({ message: 'Review updated', review });
-});
-
-// Protected: delete review (only author)
-router.delete('/:isbn/review/:reviewId', requireUser, async (req, res) => {
-  await db.read();
-  const book = db.data.books.find(b => b.isbn === req.params.isbn);
-  if (!book) return res.status(404).json({ error: 'Book not found' });
-
-  const reviewIndex = book.reviews.findIndex(r => r.id === req.params.reviewId);
-  if (reviewIndex === -1) return res.status(404).json({ error: 'Review not found' });
-
-  const review = book.reviews[reviewIndex];
-  const username = req.user.username || req.user.email;
-  if (review.user !== username) return res.status(403).json({ error: 'Only review owner can delete' });
-
-  book.reviews.splice(reviewIndex, 1);
-  await db.write();
-  res.json({ message: 'Review deleted' });
-});
-
-module.exports = router;
+export default router

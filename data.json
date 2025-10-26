@@ -1,0 +1,22 @@
+{
+  "users": [
+    {
+      "username": "aman",
+      "password": "pass123"
+    }
+  ],
+  "books": [
+    {
+      "isbn": "978-0140449136",
+      "title": "The Odyssey",
+      "author": "Homer",
+      "reviews": {}
+    },
+    {
+      "isbn": "978-0061120084",
+      "title": "To Kill a Mockingbird",
+      "author": "Harper Lee",
+      "reviews": {}
+    }
+  ]
+}

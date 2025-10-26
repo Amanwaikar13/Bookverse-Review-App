@@ -1,79 +1,35 @@
-const express = require('express');
-const router = express.Router();
-const Joi = require('joi');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const { db } = require('../db');
-const { SECRET } = require('../middleware/auth');
+// routes/auth.js
+import express from 'express'
+import jwt from 'jsonwebtoken'
+import db from '../db.js'
 
-const registerSchema = Joi.object({
-  username: Joi.string().min(3).max(30).required(),
-  email: Joi.string().email().required(),
-  password: Joi.string().min(6).required()
-});
+const router = express.Router()
+const SECRET = 'bookverse_secret'
 
-const loginSchema = Joi.object({
-  usernameOrEmail: Joi.string().required(),
-  password: Joi.string().required()
-});
-
-// register
+// Register a new user
 router.post('/register', async (req, res) => {
-  await db.read();
-  const { error, value } = registerSchema.validate(req.body);
-  if (error) return res.status(400).json({ error: error.message });
+  const { username, password } = req.body
+  if (!username || !password)
+    return res.status(400).json({ message: 'Username and password required' })
 
-  const { username, email, password } = value;
-  const exists = db.data.users.find(u => u.username === username || u.email === email);
-  if (exists) return res.status(409).json({ error: 'User already exists' });
+  const existing = db.data.users.find(u => u.username === username)
+  if (existing) return res.status(409).json({ message: 'User already exists' })
 
-  const hash = await bcrypt.hash(password, 10);
-  const newUser = {
-    id: `u_${Date.now()}`,
-    username,
-    email,
-    passwordHash: hash,
-    createdAt: new Date().toISOString()
-  };
-  db.data.users.push(newUser);
-  await db.write();
-  res.status(201).json({ message: 'Registered' });
-});
+  db.data.users.push({ username, password })
+  await db.write()
+  res.json({ message: 'Registration successful' })
+})
 
-// login -> returns JWT and sets session
-router.post('/login', async (req, res) => {
-  await db.read();
-  const { error, value } = loginSchema.validate(req.body);
-  if (error) return res.status(400).json({ error: error.message });
-
-  const { usernameOrEmail, password } = value;
+// Login and get JWT token
+router.post('/login', (req, res) => {
+  const { username, password } = req.body
   const user = db.data.users.find(
-    u => u.username === usernameOrEmail || u.email === usernameOrEmail
-  );
-  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    u => u.username === username && u.password === password
+  )
+  if (!user) return res.status(401).json({ message: 'Invalid credentials' })
 
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+  const token = jwt.sign({ username }, SECRET, { expiresIn: '1h' })
+  res.json({ message: 'Login successful', token })
+})
 
-  // create JWT
-  const token = jwt.sign(
-    { id: user.id, username: user.username, email: user.email },
-    SECRET,
-    { expiresIn: '1h' }
-  );
-
-  // create session
-  req.session.user = { id: user.id, username: user.username, email: user.email };
-
-  res.json({ message: 'Logged in', token });
-});
-
-// logout (clears session)
-router.post('/logout', (req, res) => {
-  req.session.destroy(err => {
-    if (err) return res.status(500).json({ error: 'Could not logout' });
-    res.json({ message: 'Logged out' });
-  });
-});
-
-module.exports = router;
+export default router

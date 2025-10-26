@@ -1,21 +1,32 @@
-const { Low } = require('lowdb')
-const { JSONFile } = require('lowdb/node')
-const path = require('path')
+// db.js
+import { Low } from 'lowdb'
+import { JSONFile } from 'lowdb/node'
+import { join } from 'path'
+import { fileURLToPath } from 'url'
 
-// ✅ Provide default structure immediately
-const defaultData = { users: [], books: [] }
+const __dirname = fileURLToPath(new URL('.', import.meta.url))
+const file = join(__dirname, 'data.json')
 
-const file = path.resolve(__dirname, 'db.json')
 const adapter = new JSONFile(file)
-const db = new Low(adapter, defaultData)
+const db = new Low(adapter, {
+  users: [],
+  books: [
+    {
+      isbn: '978-0140449136',
+      title: 'The Odyssey',
+      author: 'Homer',
+      reviews: {}
+    },
+    {
+      isbn: '978-0061120084',
+      title: 'To Kill a Mockingbird',
+      author: 'Harper Lee',
+      reviews: {}
+    }
+  ]
+})
 
-async function initDB() {
-  await db.read()
-  // if db.json is empty, initialize with defaultData
-  if (!db.data) {
-    db.data = defaultData
-    await db.write()
-  }
-}
+await db.read()
+await db.write()
 
-module.exports = { db, initDB }
+export default db
